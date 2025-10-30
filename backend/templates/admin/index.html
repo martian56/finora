@@ -1,0 +1,248 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}Finora Admin Dashboard{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.metric-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.metric-label {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.metric-change {
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+}
+
+.metric-change.positive {
+    color: #27ae60;
+}
+
+.metric-change.negative {
+    color: #e74c3c;
+}
+
+.recent-activity {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.activity-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-info {
+    flex: 1;
+}
+
+.activity-time {
+    color: #7f8c8d;
+    font-size: 0.8rem;
+}
+
+.chart-container {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.chart-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+    color: #2c3e50;
+}
+
+.status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.status-pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-filled {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-cancelled {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-active {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-inactive {
+    background: #f8d7da;
+    color: #721c24;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h1>Finora Trading Platform - Admin Dashboard</h1>
+    
+    <!-- Key Metrics -->
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-value">{{ metrics.total_users }}</div>
+            <div class="metric-label">Total Users</div>
+            <div class="metric-change positive">
+                {{ metrics.active_users }} active ({{ metrics.verified_users }} verified)
+            </div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-value">{{ metrics.total_trading_pairs }}</div>
+            <div class="metric-label">Trading Pairs</div>
+            <div class="metric-change positive">All active</div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-value">{{ metrics.total_orders }}</div>
+            <div class="metric-label">Total Orders</div>
+            <div class="metric-change">
+                {{ metrics.pending_orders }} pending, {{ metrics.filled_orders }} filled
+            </div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-value">{{ metrics.total_trades }}</div>
+            <div class="metric-label">Total Trades</div>
+            <div class="metric-change positive">
+                {{ metrics.today_trades }} today
+            </div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-value">${{ metrics.total_balance|floatformat:2 }}</div>
+            <div class="metric-label">Total Balance</div>
+            <div class="metric-change">
+                Across {{ metrics.total_wallets }} wallets
+            </div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-value">{{ metrics.active_api_keys }}</div>
+            <div class="metric-label">Active API Keys</div>
+            <div class="metric-change">
+                {{ metrics.unread_notifications }} unread notifications
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Activity -->
+    <div class="recent-activity">
+        <h2>Recent Orders</h2>
+        {% for order in recent_orders %}
+        <div class="activity-item">
+            <div class="activity-info">
+                <strong>{{ order.user.email }}</strong> - 
+                {{ order.side|upper }} {{ order.order_type|upper }} 
+                {{ order.quantity }} {{ order.trading_pair.base_currency.symbol }}
+                {% if order.price %}@ ${{ order.price|floatformat:2 }}{% endif %}
+            </div>
+            <div>
+                <span class="status-badge status-{{ order.status }}">
+                    {{ order.status|upper }}
+                </span>
+                <div class="activity-time">{{ order.created_at|timesince }} ago</div>
+            </div>
+        </div>
+        {% empty %}
+        <p>No recent orders.</p>
+        {% endfor %}
+    </div>
+    
+    <!-- Recent Trades -->
+    <div class="recent-activity">
+        <h2>Recent Trades</h2>
+        {% for trade in recent_trades %}
+        <div class="activity-item">
+            <div class="activity-info">
+                <strong>{{ trade.buyer.email }}</strong> bought 
+                {{ trade.quantity }} {{ trade.order.trading_pair.base_currency.symbol }}
+                from <strong>{{ trade.seller.email }}</strong>
+                @ ${{ trade.price|floatformat:2 }}
+            </div>
+            <div class="activity-time">{{ trade.timestamp|timesince }} ago</div>
+        </div>
+        {% empty %}
+        <p>No recent trades.</p>
+        {% endfor %}
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="chart-container">
+        <h2>Quick Actions</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <a href="{% url 'admin:accounts_user_changelist' %}" class="button">
+                Manage Users
+            </a>
+            <a href="{% url 'admin:markets_tradingpair_changelist' %}" class="button">
+                Trading Pairs
+            </a>
+            <a href="{% url 'admin:trading_order_changelist' %}" class="button">
+                View Orders
+            </a>
+            <a href="{% url 'admin:wallets_wallet_changelist' %}" class="button">
+                Wallet Balances
+            </a>
+            <a href="{% url 'admin:api_keys_apikey_changelist' %}" class="button">
+                API Keys
+            </a>
+            <a href="{% url 'admin:notifications_notification_changelist' %}" class="button">
+                Notifications
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
