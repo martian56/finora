@@ -21,10 +21,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Order.objects.filter(user=self.request.user).select_related('trading_pair')
 
     def perform_create(self, serializer):
-        """Create order with balance management."""
+        """Create order with balance management and execute matching."""
         try:
             # Extract validated data
-            trading_pair = serializer.validated_data['trading_pair']
+            # The serializer uses trading_pair_id (write_only), not trading_pair
+            from markets.models import TradingPair
+            from .matching_engine import MatchingEngine
+            
+            trading_pair_id = serializer.validated_data['trading_pair_id']
+            trading_pair = TradingPair.objects.get(id=trading_pair_id)
+            
             order_type = serializer.validated_data['order_type']
             side = serializer.validated_data['side']
             quantity = serializer.validated_data['quantity']
@@ -40,9 +46,20 @@ class OrderViewSet(viewsets.ModelViewSet):
                 price=price
             )
             
+            # Try to execute the order immediately
+            try:
+                order = MatchingEngine.execute_order(order)
+            except Exception as match_error:
+                # Log the error but don't fail the order creation
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f'Error matching order {order.id}: {match_error}')
+            
             # Update serializer instance
             serializer.instance = order
             
+        except TradingPair.DoesNotExist:
+            raise ValidationError('Trading pair not found')
         except DjangoValidationError as e:
             raise ValidationError(str(e))
 

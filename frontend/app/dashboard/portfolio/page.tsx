@@ -37,13 +37,14 @@ interface Asset {
 }
 
 interface Transaction {
-  id: string
-  type: "deposit" | "withdraw" | "trade" | "buy" | "sell"
-  asset: string
+  id: number
+  wallet: number
+  transaction_type: "deposit" | "withdrawal" | "trade" | "transfer"
   amount: number
-  price?: number
-  timestamp: Date
-  status: "completed" | "pending" | "failed"
+  balance_after: number
+  description: string
+  timestamp: string
+  created_at?: string
 }
 
 export default function PortfolioPage() {
@@ -53,66 +54,49 @@ export default function PortfolioPage() {
   const { wallets, isLoading: walletsLoading } = useWallets()
 
   // Convert wallets to assets format for compatibility
-  const assets = Array.isArray(wallets) ? wallets.map(wallet => ({
-    symbol: wallet.currency.symbol,
-    name: wallet.currency.name,
-    balance: Number(wallet.balance) || 0,
-    availableBalance: Number(wallet.available_balance) || 0,
-    lockedBalance: Number(wallet.frozen_balance) || 0,
-    usdValue: Number(wallet.balance) || 0, // Assuming 1:1 for USDT, would need price data for others
-    price: 1.0, // Would need to fetch real prices
-    change24h: 0, // Would need to fetch real price changes
-    avgBuyPrice: 1.0,
-    pnl: 0,
-    pnlPercentage: 0,
-  })) : []
+  // Filter to show only wallets with balance > 0
+  const assets = Array.isArray(wallets) ? wallets
+    .filter(wallet => Number(wallet.balance) > 0)
+    .map(wallet => ({
+      symbol: wallet.currency.symbol,
+      name: wallet.currency.name,
+      balance: Number(wallet.balance) || 0,
+      availableBalance: Number(wallet.available_balance) || 0,
+      lockedBalance: Number(wallet.frozen_balance) || 0,
+      usdValue: Number(wallet.balance) || 0, // Assuming 1:1 for USDT, would need price data for others
+      price: 1.0, // Would need to fetch real prices
+      change24h: 0, // Would need to fetch real price changes
+      avgBuyPrice: 1.0,
+      pnl: 0,
+      pnlPercentage: 0,
+    })) : []
 
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    {
-      id: "1",
-      type: "deposit",
-      asset: "USDT",
-      amount: 1000,
-      timestamp: new Date(Date.now() - 86400000 * 5),
-      status: "completed",
-    },
-    {
-      id: "2",
-      type: "buy",
-      asset: "BTC",
-      amount: 0.05234,
-      price: 98500,
-      timestamp: new Date(Date.now() - 86400000 * 4),
-      status: "completed",
-    },
-    {
-      id: "3",
-      type: "buy",
-      asset: "ETH",
-      amount: 1.2456,
-      price: 3450,
-      timestamp: new Date(Date.now() - 86400000 * 3),
-      status: "completed",
-    },
-    {
-      id: "4",
-      type: "buy",
-      asset: "BNB",
-      amount: 5.678,
-      price: 580,
-      timestamp: new Date(Date.now() - 86400000 * 2),
-      status: "completed",
-    },
-    {
-      id: "5",
-      type: "buy",
-      asset: "SOL",
-      amount: 12.345,
-      price: 195,
-      timestamp: new Date(Date.now() - 86400000),
-      status: "completed",
-    },
-  ])
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [transactionsLoading, setTransactionsLoading] = useState(true)
+
+  // Fetch transactions from API
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      try {
+        setTransactionsLoading(true)
+        const data = await apiClient.getTransactions()
+        setTransactions(data || [])
+      } catch (error) {
+        console.error('Failed to fetch transactions:', error)
+        toast({
+          title: "Error",
+          description: "Failed to load transactions",
+          variant: "destructive",
+        })
+      } finally {
+        setTransactionsLoading(false)
+      }
+    }
+
+    if (user) {
+      fetchTransactions()
+    }
+  }, [user, toast])
 
   const [isDepositOpen, setIsDepositOpen] = useState(false)
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false)
@@ -154,32 +138,10 @@ export default function PortfolioPage() {
       return
     }
 
-    setAssets((prev) =>
-      prev.map((asset) =>
-        asset.symbol === "USDT"
-          ? {
-              ...asset,
-              balance: asset.balance + amount,
-              availableBalance: asset.availableBalance + amount,
-              usdValue: asset.usdValue + amount,
-            }
-          : asset,
-      ),
-    )
-
-    const newTransaction: Transaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      type: "deposit",
-      asset: "USDT",
-      amount,
-      timestamp: new Date(),
-      status: "completed",
-    }
-    setTransactions([newTransaction, ...transactions])
-
+    // TODO: Implement actual deposit API call
     toast({
-      title: "Deposit Successful",
-      description: `${amount} USDT has been added to your account`,
+      title: "Deposit Initiated",
+      description: `Deposit of ${amount} USDT initiated. This is a mock deposit - implement real deposit in production.`,
     })
 
     setDepositAmount("")
@@ -207,32 +169,10 @@ export default function PortfolioPage() {
       return
     }
 
-    setAssets((prev) =>
-      prev.map((asset) =>
-        asset.symbol === "USDT"
-          ? {
-              ...asset,
-              balance: asset.balance - amount,
-              availableBalance: asset.availableBalance - amount,
-              usdValue: asset.usdValue - amount,
-            }
-          : asset,
-      ),
-    )
-
-    const newTransaction: Transaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      type: "withdraw",
-      asset: "USDT",
-      amount,
-      timestamp: new Date(),
-      status: "completed",
-    }
-    setTransactions([newTransaction, ...transactions])
-
+    // TODO: Implement actual withdrawal API call
     toast({
-      title: "Withdrawal Successful",
-      description: `${amount} USDT has been withdrawn from your account`,
+      title: "Withdrawal Initiated",
+      description: `Withdrawal of ${amount} USDT initiated. This is a mock withdrawal - implement real withdrawal in production.`,
     })
 
     setWithdrawAmount("")
@@ -380,8 +320,17 @@ export default function PortfolioPage() {
                 <CardTitle>Asset Balances</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {assets.map((asset) => (
+                {assets.length === 0 ? (
+                  <div className="flex h-48 flex-col items-center justify-center text-center">
+                    <Wallet className="mb-4 h-12 w-12 text-muted-foreground" />
+                    <p className="text-lg font-medium">No Assets Yet</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Start trading or deposit funds to see your portfolio here
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {assets.map((asset) => (
                     <div
                       key={asset.symbol}
                       className="flex items-center justify-between rounded-lg border border-border/50 p-4 transition-colors hover:bg-muted/50"
@@ -442,6 +391,7 @@ export default function PortfolioPage() {
                     </div>
                   ))}
                 </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -455,8 +405,17 @@ export default function PortfolioPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {assets.map((asset) => {
+                {assets.length === 0 ? (
+                  <div className="flex h-48 flex-col items-center justify-center text-center">
+                    <PieChart className="mb-4 h-12 w-12 text-muted-foreground" />
+                    <p className="text-lg font-medium">No Assets to Display</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Your portfolio allocation will appear here once you have assets
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {assets.map((asset) => {
                     const percentage = (asset.usdValue / totalBalance) * 100
                     return (
                       <div key={asset.symbol} className="space-y-2">
@@ -482,6 +441,7 @@ export default function PortfolioPage() {
                     )
                   })}
                 </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -492,65 +452,83 @@ export default function PortfolioPage() {
                 <CardTitle>Recent Transactions</CardTitle>
               </CardHeader>
               <CardContent>
-                {transactions.length === 0 ? (
+                {transactionsLoading ? (
+                  <div className="flex h-32 items-center justify-center">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  </div>
+                ) : transactions.length === 0 ? (
                   <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                     No transactions yet
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {transactions.map((transaction) => (
-                      <div
-                        key={transaction.id}
-                        className="flex items-center justify-between rounded-lg border border-border/50 p-4 transition-colors hover:bg-muted/50"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div
-                            className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                              transaction.type === "deposit" || transaction.type === "buy"
-                                ? "bg-primary/20"
-                                : transaction.type === "withdraw" || transaction.type === "sell"
-                                  ? "bg-destructive/20"
-                                  : "bg-muted"
-                            }`}
-                          >
-                            {transaction.type === "deposit" || transaction.type === "buy" ? (
-                              <ArrowDownRight className="h-5 w-5 text-primary" />
-                            ) : transaction.type === "withdraw" || transaction.type === "sell" ? (
-                              <ArrowUpRight className="h-5 w-5 text-destructive" />
-                            ) : (
-                              <TrendingUp className="h-5 w-5 text-muted-foreground" />
-                            )}
+                    {transactions.map((transaction) => {
+                      const txDate = new Date(transaction.timestamp || transaction.created_at || '')
+                      const isIncoming = transaction.transaction_type === "deposit" || transaction.transaction_type === "trade"
+                      const isOutgoing = transaction.transaction_type === "withdrawal" || transaction.transaction_type === "transfer"
+                      
+                      return (
+                        <div
+                          key={transaction.id}
+                          className="flex items-center justify-between rounded-lg border border-border/50 p-4 transition-colors hover:bg-muted/50"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                                isIncoming
+                                  ? "bg-primary/20"
+                                  : isOutgoing
+                                    ? "bg-destructive/20"
+                                    : "bg-muted"
+                              }`}
+                            >
+                              {isIncoming ? (
+                                <ArrowDownRight className="h-5 w-5 text-primary" />
+                              ) : isOutgoing ? (
+                                <ArrowUpRight className="h-5 w-5 text-destructive" />
+                              ) : (
+                                <TrendingUp className="h-5 w-5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium capitalize">
+                                {transaction.transaction_type}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {isNaN(txDate.getTime()) ? 'Invalid date' : (
+                                  <>
+                                    {txDate.toLocaleDateString()} at{" "}
+                                    {txDate.toLocaleTimeString()}
+                                  </>
+                                )}
+                              </p>
+                              {transaction.description && (
+                                <p className="text-xs text-muted-foreground">
+                                  {transaction.description}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium capitalize">
-                              {transaction.type} {transaction.asset}
+                          <div className="text-right">
+                            <p
+                              className={`font-medium ${
+                                isIncoming
+                                  ? "text-primary"
+                                  : isOutgoing
+                                    ? "text-destructive"
+                                    : ""
+                              }`}
+                            >
+                              {isIncoming ? "+" : isOutgoing ? "-" : ""}
+                              {Number(transaction.amount).toFixed(6)}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {transaction.timestamp.toLocaleDateString()} at{" "}
-                              {transaction.timestamp.toLocaleTimeString()}
+                              Balance: {Number(transaction.balance_after).toFixed(6)}
                             </p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p
-                            className={`font-medium ${
-                              transaction.type === "deposit" || transaction.type === "buy"
-                                ? "text-primary"
-                                : transaction.type === "withdraw" || transaction.type === "sell"
-                                  ? "text-destructive"
-                                  : ""
-                            }`}
-                          >
-                            {transaction.type === "deposit" || transaction.type === "buy" ? "+" : "-"}
-                            {transaction.amount.toFixed(6)} {transaction.asset}
-                          </p>
-                          {transaction.price && (
-                            <p className="text-sm text-muted-foreground">@ ${transaction.price.toLocaleString()}</p>
-                          )}
-                          <p className="text-xs text-muted-foreground capitalize">{transaction.status}</p>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>

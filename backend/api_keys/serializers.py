@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 from .models import APIKey, APIKeyUsage
 import secrets
 import string
@@ -23,6 +24,7 @@ class APIKeySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'user', 'key', 'secret', 'created_at', 'last_used', 'status']
     
+    @extend_schema_field(serializers.BooleanField())
     def get_is_active(self, obj):
         """Return True if status is 'active'."""
         return obj.status == 'active'
@@ -56,12 +58,13 @@ class APIKeySerializer(serializers.ModelSerializer):
 
 class APIKeyUsageSerializer(serializers.ModelSerializer):
     """Serializer for APIKeyUsage model."""
-    api_key = APIKeySerializer(read_only=True)
+    api_key_name = serializers.CharField(source='api_key.name', read_only=True)
     
     class Meta:
         model = APIKeyUsage
         fields = [
-            'id', 'api_key', 'endpoint', 'method', 'status_code',
-            'response_time', 'timestamp'
+            'id', 'api_key', 'api_key_name', 'endpoint', 'method', 
+            'status_code', 'response_time_ms', 'ip_address', 'user_agent',
+            'error_message', 'timestamp'
         ]
         read_only_fields = ['id', 'timestamp']

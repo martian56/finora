@@ -76,7 +76,9 @@ class OrderBookConsumer(AsyncWebsocketConsumer):
     """
     async def connect(self):
         self.trading_pair = self.scope['url_route']['kwargs']['trading_pair']
-        self.room_group_name = f'orderbook_{self.trading_pair}'
+        # Sanitize trading pair for use in group name (replace / with -)
+        sanitized_pair = self.trading_pair.replace('/', '-')
+        self.room_group_name = f'orderbook_{sanitized_pair}'
         
         # Join room group
         await self.channel_layer.group_add(
@@ -158,7 +160,9 @@ class PriceConsumer(AsyncWebsocketConsumer):
     """
     async def connect(self):
         self.trading_pair = self.scope['url_route']['kwargs']['trading_pair']
-        self.room_group_name = f'price_{self.trading_pair}'
+        # Sanitize trading pair for use in group name (replace / with -)
+        sanitized_pair = self.trading_pair.replace('/', '-')
+        self.room_group_name = f'price_{sanitized_pair}'
         
         # Join room group
         await self.channel_layer.group_add(
@@ -216,3 +220,64 @@ class PriceConsumer(AsyncWebsocketConsumer):
             'type': 'price_update',
             'data': event['data']
         }))
+
+
+class KlineConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket consumer for real-time candlestick/kline updates.
+    """
+    async def connect(self):
+        self.trading_pair = self.scope['url_route']['kwargs']['trading_pair']
+        self.interval = self.scope['url_route']['kwargs']['interval']
+        # Sanitize trading pair for use in group name (replace / with -)
+        sanitized_pair = self.trading_pair.replace('/', '-')
+        self.room_group_name = f'klines_{sanitized_pair}_{self.interval}'
+        
+        # Join room group
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        
+        await self.accept()
+        
+        # Send initial kline data
+        await self.send_initial_klines()
+    
+    async def disconnect(self, close_code):
+        # Leave room group
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+    
+    async def send_initial_klines(self):
+        """Send initial kline data."""
+        kline_data = await self.get_kline_data()
+        await self.send(text_data=json.dumps({
+            'type': 'kline_data',
+            'data': kline_data
+        }))
+    
+    @database_sync_to_async
+    def get_kline_data(self):
+        """Get kline data from database."""
+        # For now, return empty data as we don't have historical kline storage yet
+        # This would typically fetch from a PriceHistory or Kline model
+        return []
+    
+    # Receive message from room group
+    async def kline_update(self, event):
+        """Send kline update to WebSocket."""
+        await self.send(text_data=json.dumps({
+            'type': 'kline_update',
+            'data': event['data']
+        }))
+    
+    async def kline_data(self, event):
+        """Send kline data to WebSocket."""
+        await self.send(text_data=json.dumps({
+            'type': 'kline_data',
+            'data': event['data']
+        }))
+
