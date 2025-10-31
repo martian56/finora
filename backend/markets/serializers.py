@@ -36,8 +36,10 @@ class MarketDataSerializer(serializers.ModelSerializer):
         model = MarketData
         fields = [
             'id', 'trading_pair', 'trading_pair_id', 'price', 'volume_24h',
-            'change_24h', 'high_24h', 'low_24h', 'last_updated'
+            'change_24h', 'change_percent_24h', 'high_24h', 'low_24h', 
+            'bid_price', 'ask_price', 'bid_quantity', 'ask_quantity', 'timestamp'
         ]
+        read_only_fields = ['timestamp']
 
 
 class PriceHistorySerializer(serializers.ModelSerializer):

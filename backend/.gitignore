@@ -12,3 +12,4 @@ assets/
 *.sqlite
 db.sqlite3
 .env
+staticfiles/

@@ -150,14 +150,15 @@ class ApiClient {
     }>(`/markets/ticker/${encodeURIComponent(symbol)}/`)
   }
 
-  async getPriceHistory(pairId: number, timeframe: string = '1h') {
+  async getPriceHistory(symbol: string, interval: string = '1h', limit: number = 100) {
     return this.request<Array<{
-      id: number
-      trading_pair: number
-      price: number
-      volume: number
       timestamp: string
-    }>>(`/markets/history/${pairId}/?timeframe=${timeframe}`)
+      open: number
+      high: number
+      low: number
+      close: number
+      volume: number
+    }>>(`/markets/klines/${encodeURIComponent(symbol)}/?interval=${interval}&limit=${limit}`)
   }
 
   // Trading endpoints

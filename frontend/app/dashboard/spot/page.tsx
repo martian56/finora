@@ -13,6 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TrendingUp, TrendingDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useTradingPairs, useOrders, useWallets } from "@/hooks/use-trading"
+import { useOrderBookWebSocket, usePriceWebSocket } from "@/hooks/use-websocket"
+import { useCandlestickData } from "@/hooks/use-candlestick-data"
+import { CandlestickChart } from "@/components/candlestick-chart"
 import { apiClient } from "@/lib/api-client"
 
 export default function SpotTradingPage() {
@@ -25,12 +28,24 @@ export default function SpotTradingPage() {
   
   const [selectedPair, setSelectedPair] = useState<any>(null)
   const [marketData, setMarketData] = useState<any>(null)
-  const [orderBook, setOrderBook] = useState({ asks: [], bids: [] })
   const [orderType, setOrderType] = useState<"limit" | "market">("limit")
   const [buyAmount, setBuyAmount] = useState("")
   const [buyPrice, setBuyPrice] = useState("")
   const [sellAmount, setSellAmount] = useState("")
   const [sellPrice, setSellPrice] = useState("")
+
+  // WebSocket connections for real-time data
+  // These will automatically disconnect/reconnect when selectedPair.symbol changes
+  const { orderBook, isConnected: orderBookConnected } = useOrderBookWebSocket(selectedPair?.symbol || null)
+  const { priceData, isConnected: priceConnected } = usePriceWebSocket(selectedPair?.symbol || null)
+  
+  // Candlestick chart data
+  // This will regenerate mock data when symbol changes
+  const { data: candlestickData, isLoading: chartLoading } = useCandlestickData({
+    symbol: selectedPair?.symbol || null,
+    interval: "15m",
+    limit: 100,
+  })
 
   // Set default pair when pairs are loaded
   useEffect(() => {
@@ -45,9 +60,9 @@ export default function SpotTradingPage() {
     }
   }, [pairs, selectedPair])
 
-  // Fetch market data for selected pair
+  // Fetch initial market data for selected pair (fallback if WebSocket is not connected)
   useEffect(() => {
-    if (selectedPair?.symbol) {
+    if (selectedPair?.symbol && !priceData) {
       const fetchMarketData = async () => {
         try {
           const data = await apiClient.getMarketData(selectedPair.symbol)
@@ -71,42 +86,25 @@ export default function SpotTradingPage() {
       }
       fetchMarketData()
     }
-  }, [selectedPair?.symbol])
+  }, [selectedPair?.symbol, priceData])
 
+  // Update market data when WebSocket price updates arrive
+  useEffect(() => {
+    if (priceData) {
+      setMarketData(priceData)
+      setSelectedPair(prev => ({
+        ...prev,
+        price: priceData.price,
+        change: priceData.change_24h,
+      }))
+    }
+  }, [priceData])
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.push("/login")
     }
   }, [user, isLoading, router])
-
-  // Real-time order book updates (only if market data exists)
-  useEffect(() => {
-    if (!marketData || !selectedPair || !marketData.price) return
-    
-    const generateOrderBook = () => {
-      const asks = Array.from({ length: 10 }, (_, i) => ({
-        price: marketData.price + i * 10,
-        amount: Math.random() * 2,
-        total: 0,
-      }))
-      const bids = Array.from({ length: 10 }, (_, i) => ({
-        price: marketData.price - i * 10,
-        amount: Math.random() * 2,
-        total: 0,
-      }))
-      return { asks: asks.reverse(), bids }
-    }
-    
-    // Initial order book
-    setOrderBook(generateOrderBook())
-    
-    const interval = setInterval(() => {
-      setOrderBook(generateOrderBook())
-    }, 3000)
-    
-    return () => clearInterval(interval)
-  }, [marketData])
 
   if (isLoading || pairsLoading || !user) {
     return (
@@ -192,21 +190,16 @@ export default function SpotTradingPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6">
-        <div className="mb-6">
-          <h2 className="text-3xl font-bold">Spot Trading</h2>
-          <p className="text-muted-foreground">Trade cryptocurrencies with instant settlement</p>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-12">
+      <div className="h-[calc(100vh-4rem)] p-4">
+        <div className="grid h-full gap-3 lg:grid-cols-12">
           {/* Left sidebar - Trading pairs */}
-          <div className="lg:col-span-3">
-            <Card className="border-border/50">
-              <CardHeader>
-                <CardTitle className="text-base">Markets</CardTitle>
+          <div className="lg:col-span-2 flex flex-col overflow-hidden">
+            <Card className="border-border/50 flex flex-col h-full">
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm">Markets</CardTitle>
               </CardHeader>
-              <CardContent className="p-0">
-                <div className="space-y-1">
+              <CardContent className="p-0 flex-1 overflow-y-auto">
+                <div className="space-y-0.5">
                   {pairsLoading ? (
                     <div className="flex h-32 items-center justify-center">
                       <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -216,30 +209,41 @@ export default function SpotTradingPage() {
                       No trading pairs available
                     </div>
                   ) : (
-                    pairs.map((pair) => (
-                      <button
-                        key={pair.id}
-                        onClick={() => setSelectedPair(pair)}
-                        className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted ${
-                          selectedPair?.id === pair.id ? "bg-muted" : ""
-                        }`}
-                      >
-                        <div>
-                          <p className="font-medium">
-                            {pair.base_currency.symbol}/{pair.quote_currency.symbol}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {marketData?.price?.toFixed(2) || "Loading..."}
-                          </p>
-                        </div>
-                        <div className={`text-sm font-medium ${
-                          marketData?.change_24h >= 0 ? "text-primary" : "text-destructive"
-                        }`}>
-                          {marketData?.change_24h >= 0 ? "+" : ""}
-                          {marketData?.change_24h?.toFixed(2) || "0.00"}%
-                        </div>
-                      </button>
-                    ))
+                    pairs.map((pair) => {
+                      // Show real-time data only for selected pair
+                      const isSelected = selectedPair?.id === pair.id
+                      const displayPrice = isSelected && marketData?.price 
+                        ? marketData.price.toFixed(2) 
+                        : "Select"
+                      const displayChange = isSelected && marketData?.change_24h 
+                        ? marketData.change_24h.toFixed(2) 
+                        : "--"
+                      
+                      return (
+                        <button
+                          key={pair.id}
+                          onClick={() => setSelectedPair(pair)}
+                          className={`flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-muted ${
+                            isSelected ? "bg-muted" : ""
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {pair.base_currency.symbol}/{pair.quote_currency.symbol}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {displayPrice}
+                            </p>
+                          </div>
+                          <div className={`text-xs font-medium ${
+                            isSelected && marketData?.change_24h >= 0 ? "text-primary" : isSelected ? "text-destructive" : "text-muted-foreground"
+                          }`}>
+                            {isSelected && marketData?.change_24h >= 0 ? "+" : ""}
+                            {displayChange}%
+                          </div>
+                        </button>
+                      )
+                    })
                   )}
                 </div>
               </CardContent>
@@ -247,56 +251,62 @@ export default function SpotTradingPage() {
           </div>
 
           {/* Center - Chart and Order Book */}
-          <div className="space-y-6 lg:col-span-6">
-            {/* Price header */}
+          <div className="flex flex-col gap-3 lg:col-span-7">
+            {/* Price header - Compact */}
             <Card className="border-border/50">
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{selectedPair?.symbol || 'N/A'}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-3xl font-bold">{selectedPair?.price?.toFixed(2) || '0.00'}</p>
-                      <div
-                        className={`flex items-center gap-1 text-sm font-medium ${
-                          (selectedPair?.change || 0) >= 0 ? "text-primary" : "text-destructive"
-                        }`}
-                      >
-                        {(selectedPair?.change || 0) >= 0 ? (
-                          <TrendingUp className="h-4 w-4" />
-                        ) : (
-                          <TrendingDown className="h-4 w-4" />
-                        )}
-                        {(selectedPair?.change || 0) >= 0 ? "+" : ""}
-                        {(selectedPair?.change || 0).toFixed(2)}%
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-2xl font-bold">${marketData?.price?.toFixed(2) || "0.00"}</p>
+                        <div
+                          className={`flex items-center gap-1 text-sm font-medium ${
+                            (marketData?.change_24h || 0) >= 0 ? "text-primary" : "text-destructive"
+                          }`}
+                        >
+                          {(marketData?.change_24h || 0) >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                          {(marketData?.change_24h || 0) >= 0 ? "+" : ""}
+                          {(marketData?.change_24h || 0).toFixed(2)}%
+                        </div>
                       </div>
+                      <p className="text-xs text-muted-foreground">{selectedPair?.symbol || 'N/A'} Spot</p>
+                    </div>
+                    <div className="border-l border-border pl-4">
+                      <p className="text-xs text-muted-foreground">24h Volume</p>
+                      <p className="text-sm font-semibold">{marketData?.volume_24h?.toFixed(2) || "0.00"}</p>
+                    </div>
+                    <div className="border-l border-border pl-4">
+                      <p className="text-xs text-muted-foreground">24h High</p>
+                      <p className="text-sm font-semibold">${marketData?.high_24h?.toFixed(2) || "0.00"}</p>
+                    </div>
+                    <div className="border-l border-border pl-4">
+                      <p className="text-xs text-muted-foreground">24h Low</p>
+                      <p className="text-sm font-semibold">${marketData?.low_24h?.toFixed(2) || "0.00"}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">24h Volume</p>
-                    <p className="text-lg font-semibold">1,234.56 BTC</p>
-                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Chart placeholder */}
-            <Card className="border-border/50">
-              <CardHeader>
-                <CardTitle className="text-base">Price Chart</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex h-64 items-center justify-center rounded-lg bg-muted/30">
-                  <p className="text-muted-foreground">Chart visualization coming soon</p>
-                </div>
+            {/* Candlestick Chart - Large */}
+            <Card className="flex-1 border-border/50 overflow-hidden">
+              <CardContent className="p-2 h-full">
+                <CandlestickChart
+                  symbol={selectedPair?.symbol || ""}
+                  data={candlestickData}
+                  height={600}
+                  theme="dark"
+                />
               </CardContent>
             </Card>
 
-            {/* Order Book */}
+            {/* Order Book - Below Chart */}
             <Card className="border-border/50">
-              <CardHeader>
-                <CardTitle className="text-base">Order Book</CardTitle>
+              <CardHeader className="py-2 px-4">
+                <CardTitle className="text-sm">Order Book</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4 pt-0">
                 <div className="space-y-4">
                   <div className="grid grid-cols-3 gap-2 text-xs font-medium text-muted-foreground">
                     <div>Price (USDT)</div>
@@ -304,28 +314,41 @@ export default function SpotTradingPage() {
                     <div className="text-right">Total</div>
                   </div>
                   {/* Asks (Sell orders) */}
-                  <div className="space-y-1">
-                    {orderBook.asks.slice(0, 5).map((ask, i) => (
-                      <div key={i} className="grid grid-cols-3 gap-2 text-sm">
-                        <div className="font-medium text-destructive">{ask.price.toFixed(2)}</div>
-                        <div className="text-right">{ask.amount.toFixed(4)}</div>
-                        <div className="text-right text-muted-foreground">{(ask.price * ask.amount).toFixed(2)}</div>
+                  <div className="space-y-0.5">
+                    {orderBook.asks.length > 0 ? (
+                      orderBook.asks.slice(0, 8).map((ask, i) => (
+                        <div key={i} className="grid grid-cols-3 gap-2 text-sm">
+                          <div className="font-medium text-destructive">{Number(ask.price).toFixed(2)}</div>
+                          <div className="text-right">{Number(ask.quantity || ask.amount || 0).toFixed(4)}</div>
+                          <div className="text-right text-muted-foreground">{Number(ask.total || (ask.price * (ask.quantity || ask.amount || 0))).toFixed(2)}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center text-sm text-muted-foreground py-2">
+                        {orderBookConnected ? 'Waiting for data...' : 'Connecting...'}
                       </div>
-                    ))}
+                    )}
                   </div>
                   {/* Current price */}
                   <div className="border-y border-border/50 py-2 text-center font-bold">
                     {selectedPair?.price?.toFixed(2) || '0.00'}
+                    {priceConnected && <span className="ml-2 text-xs text-green-500">●</span>}
                   </div>
                   {/* Bids (Buy orders) */}
-                  <div className="space-y-1">
-                    {orderBook.bids.slice(0, 5).map((bid, i) => (
-                      <div key={i} className="grid grid-cols-3 gap-2 text-sm">
-                        <div className="font-medium text-primary">{bid.price.toFixed(2)}</div>
-                        <div className="text-right">{bid.amount.toFixed(4)}</div>
-                        <div className="text-right text-muted-foreground">{(bid.price * bid.amount).toFixed(2)}</div>
+                  <div className="space-y-0.5">
+                    {orderBook.bids.length > 0 ? (
+                      orderBook.bids.slice(0, 8).map((bid, i) => (
+                        <div key={i} className="grid grid-cols-3 gap-2 text-sm">
+                          <div className="font-medium text-primary">{Number(bid.price).toFixed(2)}</div>
+                          <div className="text-right">{Number(bid.quantity || bid.amount || 0).toFixed(4)}</div>
+                          <div className="text-right text-muted-foreground">{Number(bid.total || (bid.price * (bid.quantity || bid.amount || 0))).toFixed(2)}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center text-sm text-muted-foreground py-2">
+                        {orderBookConnected ? 'Waiting for data...' : 'Connecting...'}
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -333,22 +356,22 @@ export default function SpotTradingPage() {
           </div>
 
           {/* Right sidebar - Trading panel */}
-          <div className="lg:col-span-3">
-            <Card className="border-border/50">
-              <CardHeader>
-                <CardTitle className="text-base">Place Order</CardTitle>
+          <div className="lg:col-span-3 flex flex-col gap-3 overflow-hidden">
+            <Card className="border-border/50 flex-1 flex flex-col">
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm">Trade</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex-1 overflow-y-auto px-4">
                 <Tabs defaultValue="buy" className="w-full">
                   <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="buy">Buy</TabsTrigger>
-                    <TabsTrigger value="sell">Sell</TabsTrigger>
+                    <TabsTrigger value="buy" className="text-xs">Buy</TabsTrigger>
+                    <TabsTrigger value="sell" className="text-xs">Sell</TabsTrigger>
                   </TabsList>
 
-                  <div className="mb-4 mt-4">
+                  <div className="mb-3 mt-3">
                     <Label className="text-xs text-muted-foreground">Order Type</Label>
                     <Select value={orderType} onValueChange={(v) => setOrderType(v as "limit" | "market")}>
-                      <SelectTrigger className="mt-1">
+                      <SelectTrigger className="mt-1 h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -358,7 +381,7 @@ export default function SpotTradingPage() {
                     </Select>
                   </div>
 
-                  <TabsContent value="buy" className="space-y-4">
+                  <TabsContent value="buy" className="space-y-3 mt-0">
                     {orderType === "limit" && (
                       <div>
                         <Label className="text-xs text-muted-foreground">Price (USDT)</Label>

@@ -14,6 +14,7 @@ import { Slider } from "@/components/ui/slider"
 import { TrendingUp, TrendingDown, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useTradingPairs, useWallets } from "@/hooks/use-trading"
+import { useOrderBookWebSocket, usePriceWebSocket } from "@/hooks/use-websocket"
 import { apiClient } from "@/lib/api-client"
 
 interface Position {
@@ -46,16 +47,26 @@ export default function FuturesTradingPage() {
   const [shortPrice, setShortPrice] = useState("")
   const [positions, setPositions] = useState<Position[]>([])
 
+  // WebSocket connections for real-time data
+  const { orderBook, isConnected: orderBookConnected } = useOrderBookWebSocket(selectedPair?.symbol || null)
+  const { priceData, isConnected: priceConnected } = usePriceWebSocket(selectedPair?.symbol || null)
+
   // Set default pair when pairs are loaded
   useEffect(() => {
     if (pairs.length > 0 && !selectedPair) {
-      setSelectedPair(pairs[0])
+      const pair = pairs[0]
+      // Add price and change fields for display (symbol comes from API)
+      setSelectedPair({
+        ...pair,
+        price: pair.price || 0,
+        change: pair.change || 0,
+      })
     }
   }, [pairs, selectedPair])
 
-  // Fetch market data for selected pair
+  // Fetch initial market data for selected pair (fallback if WebSocket is not connected)
   useEffect(() => {
-    if (selectedPair?.symbol) {
+    if (selectedPair?.symbol && !priceData) {
       const fetchMarketData = async () => {
         try {
           const data = await apiClient.getMarketData(selectedPair.symbol)
@@ -78,26 +89,25 @@ export default function FuturesTradingPage() {
       }
       fetchMarketData()
     }
-  }, [selectedPair?.symbol])
+  }, [selectedPair?.symbol, priceData])
+
+  // Update market data when WebSocket price updates arrive
+  useEffect(() => {
+    if (priceData) {
+      setMarketData(priceData)
+      setSelectedPair((prev: any) => ({
+        ...prev,
+        price: priceData.price,
+        change: priceData.change_24h,
+      }))
+    }
+  }, [priceData])
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.push("/login")
     }
   }, [user, isLoading, router])
-
-  // Set default pair when pairs are loaded
-  useEffect(() => {
-    if (pairs.length > 0 && !selectedPair) {
-      const pair = pairs[0]
-      // Add price and change fields for display (symbol comes from API)
-      setSelectedPair({
-        ...pair,
-        price: pair.price || 0,
-        change: pair.change || 0,
-      })
-    }
-  }, [pairs, selectedPair])
 
   // Real-time price updates (only if market data exists)
   useEffect(() => {
@@ -283,35 +293,46 @@ export default function FuturesTradingPage() {
                       No trading pairs available
                     </div>
                   ) : (
-                    pairs.map((pair) => (
-                      <button
-                        key={pair.id}
-                        onClick={() => setSelectedPair(pair)}
-                        className={`flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-muted ${
-                          selectedPair?.id === pair.id ? "bg-muted" : ""
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <p className="font-medium">
-                            {pair.base_currency.symbol}/{pair.quote_currency.symbol}
-                          </p>
-                          <div
-                            className={`text-sm font-medium ${
-                              marketData?.change_24h >= 0 ? "text-primary" : "text-destructive"
-                            }`}
-                          >
-                            {marketData?.change_24h >= 0 ? "+" : ""}
-                            {marketData?.change_24h?.toFixed(2) || "0.00"}%
+                    pairs.map((pair) => {
+                      // Show real-time data only for selected pair
+                      const isSelected = selectedPair?.id === pair.id
+                      const displayPrice = isSelected && marketData?.price 
+                        ? marketData.price.toFixed(2) 
+                        : "Select"
+                      const displayChange = isSelected && marketData?.change_24h 
+                        ? marketData.change_24h.toFixed(2) 
+                        : "--"
+                      
+                      return (
+                        <button
+                          key={pair.id}
+                          onClick={() => setSelectedPair(pair)}
+                          className={`flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-muted ${
+                            isSelected ? "bg-muted" : ""
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <p className="font-medium">
+                              {pair.base_currency.symbol}/{pair.quote_currency.symbol}
+                            </p>
+                            <div
+                              className={`text-sm font-medium ${
+                                isSelected && marketData?.change_24h >= 0 ? "text-primary" : isSelected ? "text-destructive" : "text-muted-foreground"
+                              }`}
+                            >
+                              {isSelected && marketData?.change_24h >= 0 ? "+" : ""}
+                              {displayChange}%
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm text-muted-foreground">
-                            ${marketData?.price?.toFixed(2) || "Loading..."}
-                          </p>
-                          <p className="text-xs text-muted-foreground">FR: 0.01%</p>
-                        </div>
-                      </button>
-                    ))
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground">
+                              ${displayPrice}
+                            </p>
+                            <p className="text-xs text-muted-foreground">FR: 0.01%</p>
+                          </div>
+                        </button>
+                      )
+                    })
                   )}
                 </div>
               </CardContent>
@@ -363,6 +384,59 @@ export default function FuturesTradingPage() {
               <CardContent>
                 <div className="flex h-64 items-center justify-center rounded-lg bg-muted/30">
                   <p className="text-muted-foreground">Chart visualization coming soon</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Order Book */}
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle className="text-base">Order Book</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-2 text-xs font-medium text-muted-foreground">
+                    <div>Price (USDT)</div>
+                    <div className="text-right">Amount (BTC)</div>
+                    <div className="text-right">Total</div>
+                  </div>
+                  {/* Asks (Sell orders) */}
+                  <div className="space-y-1">
+                    {orderBook.asks.length > 0 ? (
+                      orderBook.asks.slice(0, 5).map((ask, i) => (
+                        <div key={i} className="grid grid-cols-3 gap-2 text-sm">
+                          <div className="font-medium text-destructive">{Number(ask.price).toFixed(2)}</div>
+                          <div className="text-right">{Number(ask.quantity || ask.amount || 0).toFixed(4)}</div>
+                          <div className="text-right text-muted-foreground">{Number(ask.total || (ask.price * (ask.quantity || ask.amount || 0))).toFixed(2)}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center text-sm text-muted-foreground py-2">
+                        {orderBookConnected ? 'Waiting for data...' : 'Connecting...'}
+                      </div>
+                    )}
+                  </div>
+                  {/* Current price */}
+                  <div className="border-y border-border/50 py-2 text-center font-bold">
+                    {selectedPair?.price?.toFixed(2) || '0.00'}
+                    {priceConnected && <span className="ml-2 text-xs text-green-500">●</span>}
+                  </div>
+                  {/* Bids (Buy orders) */}
+                  <div className="space-y-1">
+                    {orderBook.bids.length > 0 ? (
+                      orderBook.bids.slice(0, 5).map((bid, i) => (
+                        <div key={i} className="grid grid-cols-3 gap-2 text-sm">
+                          <div className="font-medium text-primary">{Number(bid.price).toFixed(2)}</div>
+                          <div className="text-right">{Number(bid.quantity || bid.amount || 0).toFixed(4)}</div>
+                          <div className="text-right text-muted-foreground">{Number(bid.total || (bid.price * (bid.quantity || bid.amount || 0))).toFixed(2)}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center text-sm text-muted-foreground py-2">
+                        {orderBookConnected ? 'Waiting for data...' : 'Connecting...'}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>

@@ -29,7 +29,7 @@ class OrderService:
                 from markets.models import MarketData
                 market_data = MarketData.objects.filter(
                     trading_pair=trading_pair
-                ).order_by('-last_updated').first()
+                ).order_by('-timestamp').first()
                 estimated_price = market_data.price if market_data else Decimal('50000')
             else:
                 estimated_price = price
@@ -98,7 +98,7 @@ class OrderService:
                 from markets.models import MarketData
                 market_data = MarketData.objects.filter(
                     trading_pair=order.trading_pair
-                ).order_by('-last_updated').first()
+                ).order_by('-timestamp').first()
                 estimated_price = market_data.price if market_data else Decimal('50000')
             else:
                 estimated_price = order.price

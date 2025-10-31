@@ -40,7 +40,7 @@ class DepositViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        return Deposit.objects.filter(user=self.request.user).select_related('wallet')
+        return Deposit.objects.filter(user=self.request.user).select_related('currency')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -53,7 +53,7 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        return Withdrawal.objects.filter(user=self.request.user).select_related('wallet')
+        return Withdrawal.objects.filter(user=self.request.user).select_related('currency')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
